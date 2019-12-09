@@ -13,60 +13,59 @@ enum
 {
   F,
   DRF,
-  EX1,
-  EX2,
-  MEM1,
-  MEM2,
-  WB,
+  QUEUE,
+  EX,
+  RETIRE,
   NUM_STAGES
 };
 
 /* Format of an APEX instruction  */
 typedef struct APEX_Instruction
 {
-  char opcode[128];	// Operation Code
-  int rd;		    // Destination Register Address
-  int rs1;		    // Source-1 Register Address
-  int rs2;		    // Source-2 Register Address
-  int imm;		    // Literal Value
+  char opcode[128]; // Operation Code
+  int rd;           // Destination Register Address
+  int rs1;          // Source-1 Register Address
+  int rs2;          // Source-2 Register Address
+  int imm;          // Literal Value
 } APEX_Instruction;
 
 /* Model of CPU stage latch */
 typedef struct CPU_Stage
 {
-  int pc;		    // Program Counter
-  char opcode[128];	// Operation Code
-  int rs1;		    // Source-1 Register Address
-  int rs2;		    // Source-2 Register Address
-  int rd;		    // Destination Register Address
-  int imm;		    // Literal Value
-  int rs1_value;	// Source-1 Register Value
-  int rs2_value;	// Source-2 Register Value
-  int buffer;		// Latch to hold some value
-  int mem_address;	// Computed Memory Address
-  int busy;		    // Flag to indicate, stage is performing some action
-  int stalled;		// Flag to indicate, stage is stalled
-  int flush;         // Flag to flush when branch is taken
+  int pc;           // Program Counter
+  char opcode[128]; // Operation Code
+  int rs1;          // Source-1 Register Address
+  int rs2;          // Source-2 Register Address
+  int rd;           // Destination Register Address
+  int imm;          // Literal Value
+  int rs1_value;    // Source-1 Register Value
+  int rs2_value;    // Source-2 Register Value
+  int buffer;       // Latch to hold some value
+  int mem_address;  // Computed Memory Address
+  int busy;         // Flag to indicate, stage is performing some action
+  int stalled;      // Flag to indicate, stage is stalled
+  int flush;        // Flag to flush when branch is taken
 } CPU_Stage;
 
 /* Model of APEX CPU */
 typedef struct APEX_CPU
 {
-  /* Clock cycles elasped */
+  /* Clock cycles elapsed */
   int clock;
 
   /* Current program counter */
   int pc;
 
+  int no_cycles;
   /* Integer register file */
   int regs[32];
-  int regs_valid[32];
-  int zflag;
+  int freeRegisterFlag[32];
+
   /* Array of 5 CPU_stage */
-  CPU_Stage stage[7];
+  CPU_Stage stage[5];
 
   /* Code Memory where instructions are stored */
-  APEX_Instruction* code_memory;
+  APEX_Instruction *code_memory;
   int code_memory_size;
 
   /* Data Memory */
@@ -75,28 +74,95 @@ typedef struct APEX_CPU
   /* Some stats */
   int ins_completed;
 
+  /* IQ data*/
+
+  int zFlag;
+
+  int memFetchStore;
+  int flushBranchTakenData;
+  int newPCBranchTaken;
+
+  int haltEncountered;
+  int haltRetiredFromROB;
+
 } APEX_CPU;
 
-APEX_Instruction* create_code_memory(const char* filename, int* size);
+struct QueueEntry
+{
+  char opcode[128]; // Operation Code
 
-APEX_CPU* APEX_cpu_init(const char* filename);
+  int rs1;
+  int rs1_ready;
+  int rs1_value;
 
-int APEX_cpu_run(APEX_CPU* cpu);
+  int rs2;
+  int rs2_ready;
+  int rs2_value;
 
-void APEX_cpu_stop(APEX_CPU* cpu);
+  int rd;
+  int imm;
 
-int fetch(APEX_CPU* cpu);
+  int pc;                   // Program Counter
+  int isAvailableStatusBit; //indicates if this IQ entry is allocated or free
 
-int decode(APEX_CPU* cpu);
+  int IQFront;
+  int IQRear;
+} QueueEntry;
 
-int execute1(APEX_CPU* cpu);
+struct QueueEntry IQ[8];
 
-int execute2(APEX_CPU* cpu);
+struct LSQ
+{
+  struct QueueEntry LSQEntry;
+  int LOADSTOREBit;
 
-int memory1(APEX_CPU* cpu);
+} LSQ[6];
 
-int memory2(APEX_CPU* cpu);
+struct functionalUnits
+{
+  char opcode[128]; // Operation Code
 
-int writeback(APEX_CPU* cpu);
+  int rs1;
+  int rs1_value;
+
+  int rs2;
+  int rs2_value;
+
+  int buffer;      //store the calculated value.
+  int mem_address; //store the calculated value.
+
+  int rd;
+  int imm;
+
+  int pc;
+  int dummyEntry;
+} functionalUnits;
+
+struct ROB
+{
+
+  int ROBHeadPointer;
+  int ROBTailPointer;
+
+  struct APEX_Instruction ROBAPEXInstruction;
+} ROB[12];
+
+APEX_Instruction *create_code_memory(const char *filename, int *size);
+
+APEX_CPU *APEX_cpu_init(const char *filename);
+
+int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles);
+
+void APEX_cpu_stop(APEX_CPU *cpu);
+
+int fetch(APEX_CPU *cpu);
+
+int decode(APEX_CPU *cpu);
+
+int execute(APEX_CPU *cpu);
+
+int memory2(APEX_CPU *cpu);
+
+int writeback(APEX_CPU *cpu);
 
 #endif
