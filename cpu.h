@@ -1,22 +1,16 @@
 #ifndef _APEX_CPU_H_
 #define _APEX_CPU_H_
-/**
- *  cpu.h
- *  Contains various CPU and Pipeline Data structures
- *
- *  Author :
- *  Gaurav Kothari (gkothar1@binghamton.edu)
- *  State University of New York, Binghamton
- */
-
 enum
 {
   F,
   DRF,
-  QUEUE,
+  //QUEUE,
+  INT_FU1,
   EX,
-  RETIRE,
   NUM_STAGES
+
+  //RETIRE,
+  //NUM_STAGES
 };
 
 /* Format of an APEX instruction  */
@@ -59,6 +53,7 @@ typedef struct APEX_CPU
   int no_cycles;
   /* Integer register file */
   int regs[32];
+
   int freeRegisterFlag[32];
 
   /* Array of 5 CPU_stage */
@@ -138,6 +133,13 @@ struct functionalUnits
   int dummyEntry;
 } functionalUnits;
 
+struct prf{
+    int valid;
+    int value;
+    int latest;
+    int arf_val;
+}prf[24];
+int pcount;
 struct ROB
 {
 
@@ -157,12 +159,13 @@ void APEX_cpu_stop(APEX_CPU *cpu);
 
 int fetch(APEX_CPU *cpu);
 
+int fun(struct prf prf[]);
+
 int decode(APEX_CPU *cpu);
 
 int execute(APEX_CPU *cpu);
 
 int memory2(APEX_CPU *cpu);
 
-int writeback(APEX_CPU *cpu);
 
 #endif
