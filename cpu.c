@@ -28,6 +28,7 @@ APEX_CPU *APEX_cpu_init(const char *filename)
     {
         prf[i].valid=1;
         prf[i].value=-1;
+        prf[i].latest=-1;
 
     }
   cpu->code_memory = create_code_memory(filename, &cpu->code_memory_size);
@@ -467,7 +468,7 @@ int decode(APEX_CPU *cpu)
 
     /* Copy data from decode latch to execute latch*/
 
-    cpu->stage[QUEUE] = cpu->stage[DRF];
+    cpu->stage[INT_FU1] = cpu->stage[DRF];
 
     if (ENABLE_DEBUG_MESSAGES)
     {
@@ -480,12 +481,29 @@ int decode(APEX_CPU *cpu)
   return 0;
 }
 
-/*
- *  Execute Stage of APEX Pipeline
- *
- *  Note : You are free to edit this function according to your
- * 				 implementation
- */
+int intfu1(APEX_CPU *cpu){
+    CPU_Stage *stage = &cpu->stage[INT_FU1];
+    int frd=0;
+    if(strcmp(stage->opcode,"MOVC")){
+
+        for (int i = 0; i <24 ; ++i) {
+
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+
+        }
+    prf[frd].arf_val=cpu->regs[stage->rd];
+        prf[frd].latest=1;
+    }
+    cpu->stage[EX]=cpu->stage[INT_FU1];
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("Integer FU1", stage);
+    }
+    return 0;
+}
 
 int execute(APEX_CPU *cpu)
 {
@@ -522,15 +540,19 @@ int execute(APEX_CPU *cpu)
     }
 
     /* Copy data from Execute latch to Memory latch*/
-    cpu->stage[RETIRE] = cpu->stage[EX];
+//    cpu->stage[RETIRE] = cpu->stage[EX];EX
 
     if (ENABLE_DEBUG_MESSAGES)
     {
       print_stage_content("Execute2", stage);
     }
   }
+
+
   else
     printf("Execute2 :\n");
+
+    cpu->ins_completed++;
   return 0;
 }
 
@@ -550,7 +572,7 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
         printf("Clock Cycle #: %d\n", cpu->clock + 1);
         printf("--------------------------------\n");
       }
-
+      intfu1(cpu);
       execute(cpu);
       decode(cpu);
       fetch(cpu);
@@ -559,10 +581,14 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
 
       CPU_Stage *stage1 = &cpu->stage[F];
       CPU_Stage *stage2 = &cpu->stage[DRF];
+     //CPU_Stage *stage3 = &cpu->stage[INT_FU1];
+      CPU_Stage *stage4 = &cpu->stage[EX];
 
       if (
           (strcmp(stage2->opcode, "") == 0) &&
-          (strcmp(stage1->opcode, "") == 0)
+          (strcmp(stage1->opcode, "") == 0) &&
+         // (strcmp(stage3->opcode, "") == 0) &&
+          (strcmp(stage4->opcode, "") == 0)
 
       )
       {
@@ -575,7 +601,7 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
     printf("++++++++++++++RAT++++++++++++++++\n");
       for (int j = 0; j < 24; ++j) {
           if(prf[j].valid!=1)
-          printf("R[%d] = P%d & valid = %d\n",prf[j].value,j, prf[j].valid);
+          printf("|R[%d] = P%d & valid = %d ARF_VAL=%d Latest=%d|\n",prf[j].value,j, prf[j].valid,prf[j].arf_val,prf[j].latest);
       }
 printf("\n");
     printf("=====REGISTER VALUE============\n");
