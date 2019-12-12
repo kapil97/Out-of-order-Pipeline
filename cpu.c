@@ -28,7 +28,7 @@ APEX_CPU *APEX_cpu_init(const char *filename)
     {
         prf[i].valid=1;
         prf[i].value=-1;
-        prf[i].latest=-1;
+        prf[i].latest=0;
 
     }
   cpu->code_memory = create_code_memory(filename, &cpu->code_memory_size);
@@ -208,6 +208,7 @@ int fetch(APEX_CPU *cpu)
 int decode(APEX_CPU *cpu)
 {
   CPU_Stage *stage = &cpu->stage[DRF];
+
   if (stage->flush == 1)
   {
     strcpy(stage->opcode, " ");
@@ -311,7 +312,6 @@ int decode(APEX_CPU *cpu)
           prf[pcount].value=stage->rd;
           prf[pcount].valid=0;
     }
-
     if (strcmp(stage->opcode, "SUB") == 0)
     {
 
@@ -350,7 +350,6 @@ int decode(APEX_CPU *cpu)
           prf[pcount].valid=0;
 
     }
-
     if (strcmp(stage->opcode, "MUL") == 0)
     {
 
@@ -388,7 +387,6 @@ int decode(APEX_CPU *cpu)
           prf[pcount].valid=0;
 
     }
-
     if (strcmp(stage->opcode, "ADDL") == 0)
     {
 
@@ -415,7 +413,6 @@ int decode(APEX_CPU *cpu)
           prf[pcount].valid=0;
 
     }
-
     if (strcmp(stage->opcode, "SUBL") == 0)
     {
         stage->rs1_value = cpu->regs[stage->rs1];
@@ -458,7 +455,6 @@ int decode(APEX_CPU *cpu)
     if (strcmp(stage->opcode, "HALT") == 0)
     {
     }
-    /* No Register file read needed for MOVC */
     if (strcmp(stage->opcode, "MOVC") == 0)
     {
         pcount=fun(prf);
@@ -466,14 +462,19 @@ int decode(APEX_CPU *cpu)
         prf[pcount].valid=0;
     }
 
-    /* Copy data from decode latch to execute latch*/
-
-    cpu->stage[INT_FU1] = cpu->stage[DRF];
-
     if (ENABLE_DEBUG_MESSAGES)
     {
-      print_stage_content("Decode/RF", stage);
+        printf("---------------------------------RAT-------------------------------------\n");
+        for (int j = 0; j < 24; ++j) {
+            if(prf[j].valid!=1)
+                printf("|R[%d] = P%d & valid = %d ARF_VAL=%d Latest=%d|\n",prf[j].value,j, prf[j].valid,prf[j].arf_val,prf[j].latest);
+        }
+        printf("---------------------------------RAT-------------------------------------\n");
+        print_stage_content("Decode/RF", stage);
+
     }
+
+    cpu->stage[INT_FU1] = cpu->stage[DRF];
   }
   else
     printf("Decode/RF :\n");
@@ -481,10 +482,11 @@ int decode(APEX_CPU *cpu)
   return 0;
 }
 
-int intfu1(APEX_CPU *cpu){
+int intfu1(APEX_CPU *cpu)
+{
     CPU_Stage *stage = &cpu->stage[INT_FU1];
-    int frd=0;
-    if(strcmp(stage->opcode,"MOVC")){
+    int frd=0,frs1=0,frs2=0;
+    if(strcmp(stage->opcode,"MOVC")==0){
 
         for (int i = 0; i <24 ; ++i) {
 
@@ -494,14 +496,233 @@ int intfu1(APEX_CPU *cpu){
             else frd++;
 
         }
-    prf[frd].arf_val=cpu->regs[stage->rd];
+        prf[frd].arf_val=stage->imm;
+        printf("value of immmmm in movc:%d", stage->imm);
         prf[frd].latest=1;
     }
-    cpu->stage[EX]=cpu->stage[INT_FU1];
+    if(strcmp(stage->opcode,"ADD")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+            stage->rs1_value=prf[frs1].arf_val;
+            stage->rs2_value=prf[frs2].arf_val;
+            stage->buffer=stage->rs1_value+stage->rs2_value;
+            prf[frd].arf_val=stage->buffer;
+            prf[frd].latest=1;
+
+    }
+    if(strcmp(stage->opcode,"SUB")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->rs2_value=prf[frs2].arf_val;
+        stage->buffer=stage->rs1_value-stage->rs2_value;
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+    }
+    if(strcmp(stage->opcode,"STORE")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->rs2_value=prf[frs2].arf_val;
+        stage->buffer=stage->rs1_value+stage->imm;
+    }
+    if(strcmp(stage->opcode,"SUBL")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->buffer=stage->rs1_value+stage->rs2_value;
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+        }
+    if(strcmp(stage->opcode,"ADDL")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+
+        stage->buffer=stage->rs1_value + stage->imm;
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+    }
+    if(strcmp(stage->opcode,"STR")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->rs2_value=prf[frs2].arf_val;
+        stage->buffer=stage->rs1_value - stage->rs2_value;
+
+    }
+    if(strcmp(stage->opcode,"LOAD")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+
+        stage->buffer=stage->rs1_value + stage->imm;
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+    }
+    if(strcmp(stage->opcode,"LDR")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->rs2_value=prf[frs2].arf_val;
+        stage->buffer=stage->rs1_value+stage->rs2_value;
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+    }
     if (ENABLE_DEBUG_MESSAGES)
     {
         print_stage_content("Integer FU1", stage);
     }
+    cpu->stage[INT_FU2]=cpu->stage[INT_FU1];
+
+    return 0;
+}
+
+int intfu2(APEX_CPU *cpu)
+{
+    CPU_Stage *stage = &cpu->stage[INT_FU2];
+
+    //if(!stage->stalled)
+        //cpu->stage[RETIRE] = cpu->stage[EX];
+
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("Integer FU2", stage);
+    }
+
+    cpu->stage[EX]=cpu->stage[INT_FU2];
     return 0;
 }
 
@@ -548,10 +769,6 @@ int execute(APEX_CPU *cpu)
     }
   }
 
-
-  else
-    printf("Execute2 :\n");
-
     cpu->ins_completed++;
   return 0;
 }
@@ -572,8 +789,10 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
         printf("Clock Cycle #: %d\n", cpu->clock + 1);
         printf("--------------------------------\n");
       }
-      intfu1(cpu);
+
       execute(cpu);
+      intfu2(cpu);
+      intfu1(cpu);
       decode(cpu);
       fetch(cpu);
 
@@ -581,14 +800,16 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
 
       CPU_Stage *stage1 = &cpu->stage[F];
       CPU_Stage *stage2 = &cpu->stage[DRF];
-     //CPU_Stage *stage3 = &cpu->stage[INT_FU1];
-      CPU_Stage *stage4 = &cpu->stage[EX];
+      CPU_Stage *stage3 = &cpu->stage[INT_FU1];
+      CPU_Stage *stage4 = &cpu->stage[INT_FU2];
+      CPU_Stage *stage5 = &cpu->stage[EX];
 
       if (
           (strcmp(stage2->opcode, "") == 0) &&
           (strcmp(stage1->opcode, "") == 0) &&
-         // (strcmp(stage3->opcode, "") == 0) &&
-          (strcmp(stage4->opcode, "") == 0)
+          (strcmp(stage3->opcode, "") == 0) &&
+          (strcmp(stage4->opcode, "") == 0) &&
+          (strcmp(stage5->opcode, "") == 0)
 
       )
       {
