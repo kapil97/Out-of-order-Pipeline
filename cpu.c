@@ -78,6 +78,12 @@ int fun(struct prf prf[]) {
     return pcount;
 }
 
+void freephyreg(struct prf prf[], int free){
+    prf[free].latest=0;
+    prf[free].valid=1;
+    prf[free].arf_val=-1;
+    prf[free].value=-1;
+}
 
 void APEX_cpu_stop(APEX_CPU *cpu)
 {
@@ -90,8 +96,7 @@ int get_code_index(int pc)
   return (pc - 4000) / 4;
 }
 
-static void
-print_instruction(CPU_Stage *stage)
+static void print_instruction(CPU_Stage *stage)
 {
 
   if (
@@ -161,8 +166,7 @@ print_instruction(CPU_Stage *stage)
   }
 }
 
-static void
-print_stage_content(char *name, CPU_Stage *stage)
+static void print_stage_content(char *name, CPU_Stage *stage)
 {
   printf("%-15s: pc(%d) ", name, stage->pc);
   print_instruction(stage);
@@ -207,6 +211,7 @@ int fetch(APEX_CPU *cpu)
 
 int decode(APEX_CPU *cpu)
 {
+    int intcounter=0,mulcounter=0;
   CPU_Stage *stage = &cpu->stage[DRF];
 
   if (stage->flush == 1)
@@ -314,7 +319,6 @@ int decode(APEX_CPU *cpu)
     }
     if (strcmp(stage->opcode, "SUB") == 0)
     {
-
         stage->rs1_value = cpu->regs[stage->rs1];
         stage->rs2_value = cpu->regs[stage->rs2];
         cpu->stage[F].stalled = 0;
@@ -461,6 +465,24 @@ int decode(APEX_CPU *cpu)
         prf[pcount].value=stage->rd;
         prf[pcount].valid=0;
     }
+    if (
+              strcmp(stage->opcode, "LOAD") == 0 ||
+              strcmp(stage->opcode, "LDR")  == 0 ||
+              strcmp(stage->opcode, "ADD")  == 0 ||
+              strcmp(stage->opcode, "SUB")  == 0 ||
+              strcmp(stage->opcode, "STORE")== 0 ||
+              strcmp(stage->opcode, "STR")  == 0 ||
+              strcmp(stage->opcode, "MOVC") == 0 ||
+              strcmp(stage->opcode, "ADDL") == 0 ||
+              strcmp(stage->opcode, "SUBL") == 0){
+          cpu->stage[INT_FU1]=cpu->stage[DRF];
+          intcounter++;
+
+      }
+      if(strcmp(stage->opcode, "MUL") == 0) {
+          cpu->stage[MUL_FU1]=cpu->stage[DRF];
+          mulcounter++;
+      }
 
     if (ENABLE_DEBUG_MESSAGES)
     {
@@ -473,31 +495,35 @@ int decode(APEX_CPU *cpu)
         print_stage_content("Decode/RF", stage);
 
     }
-
-    cpu->stage[INT_FU1] = cpu->stage[DRF];
+    if(intcounter==0)
+        strcpy(cpu->stage[INT_FU1].opcode,"");
+      if(mulcounter==0)
+          strcpy(cpu->stage[MUL_FU1].opcode,"");
   }
-  else
-    printf("Decode/RF :\n");
-
   return 0;
 }
 
 int intfu1(APEX_CPU *cpu)
 {
     CPU_Stage *stage = &cpu->stage[INT_FU1];
-    int frd=0,frs1=0,frs2=0;
+    int frd=0,frs1=0,frs2=0,free=0;
     if(strcmp(stage->opcode,"MOVC")==0){
 
         for (int i = 0; i <24 ; ++i) {
-
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
-
         }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->imm;
-        printf("value of immmmm in movc:%d", stage->imm);
         prf[frd].latest=1;
     }
     if(strcmp(stage->opcode,"ADD")==0){
@@ -518,7 +544,7 @@ int intfu1(APEX_CPU *cpu)
         }
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
@@ -527,6 +553,14 @@ int intfu1(APEX_CPU *cpu)
             stage->rs1_value=prf[frs1].arf_val;
             stage->rs2_value=prf[frs2].arf_val;
             stage->buffer=stage->rs1_value+stage->rs2_value;
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+            freephyreg(prf,free);
             prf[frd].arf_val=stage->buffer;
             prf[frd].latest=1;
 
@@ -549,7 +583,7 @@ int intfu1(APEX_CPU *cpu)
         }
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
@@ -558,8 +592,17 @@ int intfu1(APEX_CPU *cpu)
         stage->rs1_value=prf[frs1].arf_val;
         stage->rs2_value=prf[frs2].arf_val;
         stage->buffer=stage->rs1_value-stage->rs2_value;
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->buffer;
         prf[frd].latest=1;
+
     }
     if(strcmp(stage->opcode,"STORE")==0){
 
@@ -592,14 +635,21 @@ int intfu1(APEX_CPU *cpu)
         }
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
         }
 
         stage->rs1_value=prf[frs1].arf_val;
-        stage->buffer=stage->rs1_value+stage->rs2_value;
+        stage->buffer=stage->rs1_value-stage->imm;
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->buffer;
         prf[frd].latest=1;
         }
@@ -615,17 +665,24 @@ int intfu1(APEX_CPU *cpu)
 
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
         }
 
         stage->rs1_value=prf[frs1].arf_val;
-
         stage->buffer=stage->rs1_value + stage->imm;
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->buffer;
         prf[frd].latest=1;
+
     }
     if(strcmp(stage->opcode,"STR")==0){
 
@@ -659,15 +716,21 @@ int intfu1(APEX_CPU *cpu)
         }
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
         }
 
         stage->rs1_value=prf[frs1].arf_val;
-
         stage->buffer=stage->rs1_value + stage->imm;
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->buffer;
         prf[frd].latest=1;
     }
@@ -689,7 +752,7 @@ int intfu1(APEX_CPU *cpu)
         }
 
         for (int i = 0; i <24 ; ++i) {
-            if(prf[i].value==stage->rd){
+            if(prf[i].value==stage->rd && prf[i].latest==0){
                 break;
             }
             else frd++;
@@ -698,14 +761,24 @@ int intfu1(APEX_CPU *cpu)
         stage->rs1_value=prf[frs1].arf_val;
         stage->rs2_value=prf[frs2].arf_val;
         stage->buffer=stage->rs1_value+stage->rs2_value;
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
         prf[frd].arf_val=stage->buffer;
         prf[frd].latest=1;
+
     }
+    cpu->stage[INT_FU2]=cpu->stage[INT_FU1];
     if (ENABLE_DEBUG_MESSAGES)
     {
         print_stage_content("Integer FU1", stage);
     }
-    cpu->stage[INT_FU2]=cpu->stage[INT_FU1];
+
 
     return 0;
 }
@@ -716,61 +789,105 @@ int intfu2(APEX_CPU *cpu)
 
     //if(!stage->stalled)
         //cpu->stage[RETIRE] = cpu->stage[EX];
-
+    cpu->stage[RETIRE]=cpu->stage[INT_FU2];
     if (ENABLE_DEBUG_MESSAGES)
     {
         print_stage_content("Integer FU2", stage);
     }
 
-    cpu->stage[EX]=cpu->stage[INT_FU2];
+
     return 0;
 }
 
-int execute(APEX_CPU *cpu)
+int mulfu1(APEX_CPU *cpu)
 {
-  CPU_Stage *stage = &cpu->stage[EX];
-  if (!stage->busy && !stage->stalled)
-  {
+    CPU_Stage *stage = &cpu->stage[MUL_FU1];
 
-    /* Store */
-    if (strcmp(stage->opcode, "STORE") == 0)
-    {
-      if (cpu->freeRegisterFlag[stage->rs1] == 1 && cpu->freeRegisterFlag[stage->rs2])
-      {
-        stage->buffer = stage->rs2_value + stage->imm;
-        if (cpu->freeRegisterFlag[stage->rs1] == 1)
-        {
-          cpu->regs[stage->buffer] = stage->rs1_value;
-        }
-      }
-    }
-    if (strcmp(stage->opcode, "LOAD") == 0)
-    {
-      if (cpu->freeRegisterFlag[stage->rs1] == 1 && cpu->freeRegisterFlag[stage->rs2])
-      {
-        stage->buffer = stage->rs1_value + stage->imm;
-      }
-    }
-    /* MOVC */
-    if (strcmp(stage->opcode, "MOVC") == 0)
-    {
-      stage->buffer = stage->imm;
-    }
-    if (strcmp(stage->opcode, "BZ") == 0)
-    {
-    }
-
-    /* Copy data from Execute latch to Memory latch*/
-//    cpu->stage[RETIRE] = cpu->stage[EX];EX
-
+    //if(!stage->stalled)
+    //cpu->stage[RETIRE] = cpu->stage[EX];
+    cpu->stage[MUL_FU2]=cpu->stage[MUL_FU1];
     if (ENABLE_DEBUG_MESSAGES)
     {
-      print_stage_content("Execute2", stage);
+        print_stage_content("MUL FU1", stage);
     }
-  }
+    return 0;
+}
 
+int mulfu2(APEX_CPU *cpu)
+{
+    CPU_Stage *stage = &cpu->stage[MUL_FU2];
+
+    //if(!stage->stalled)
+    //cpu->stage[RETIRE] = cpu->stage[EX];
+    cpu->stage[MUL_FU3]=cpu->stage[MUL_FU2];
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("MUL FU2", stage);
+    }
+
+
+    return 0;
+}
+
+int mulfu3(APEX_CPU *cpu){
+    CPU_Stage *stage = &cpu->stage[MUL_FU3];
+    int frd=0,frs1=0,frs2=0,free=0;
+    if(strcmp(stage->opcode,"MUL")==0){
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs1 && prf[i].latest==1){
+                break;
+            }
+            else frs1++;
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs2 && prf[i].latest==1){
+                break;
+            }
+            else frs2++;
+
+        }
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==0){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->rs2_value=prf[frs2].arf_val;
+        stage->buffer=stage->rs1_value*stage->rs2_value;
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+
+    }
+    cpu->stage[RETIRE]=cpu->stage[MUL_FU3];
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("MUL FU3", stage);
+    }
+    return 0;
+
+}
+
+int retire(APEX_CPU *cpu){
+    CPU_Stage *stage = &cpu->stage[RETIRE];
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("Retired", stage);
+    }
     cpu->ins_completed++;
-  return 0;
+    return 0;
 }
 
 int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
@@ -789,8 +906,10 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
         printf("Clock Cycle #: %d\n", cpu->clock + 1);
         printf("--------------------------------\n");
       }
-
-      execute(cpu);
+      retire(cpu);
+      mulfu3(cpu);
+      mulfu2(cpu);
+      mulfu1(cpu);
       intfu2(cpu);
       intfu1(cpu);
       decode(cpu);
@@ -802,13 +921,20 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
       CPU_Stage *stage2 = &cpu->stage[DRF];
       CPU_Stage *stage3 = &cpu->stage[INT_FU1];
       CPU_Stage *stage4 = &cpu->stage[INT_FU2];
-      CPU_Stage *stage5 = &cpu->stage[EX];
+      CPU_Stage *stage5 = &cpu->stage[MUL_FU1];
+      CPU_Stage *stage6 = &cpu->stage[MUL_FU2];
+      CPU_Stage *stage7 = &cpu->stage[MUL_FU3];
+      CPU_Stage *stage8 = &cpu->stage[RETIRE];
+
 
       if (
           (strcmp(stage2->opcode, "") == 0) &&
           (strcmp(stage1->opcode, "") == 0) &&
           (strcmp(stage3->opcode, "") == 0) &&
           (strcmp(stage4->opcode, "") == 0) &&
+                  (strcmp(stage6->opcode, "") == 0) &&
+                  (strcmp(stage7->opcode, "") == 0) &&
+                  (strcmp(stage8->opcode, "") == 0) &&
           (strcmp(stage5->opcode, "") == 0)
 
       )

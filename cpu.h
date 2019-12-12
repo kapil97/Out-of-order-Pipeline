@@ -7,7 +7,10 @@ enum
   //QUEUE,
   INT_FU1,
   INT_FU2,
-  EX,
+  MUL_FU1,
+  MUL_FU2,
+  MUL_FU3,
+  //EX,
   NUM_STAGES,
 
   RETIRE
@@ -58,7 +61,7 @@ typedef struct APEX_CPU
   int freeRegisterFlag[32];
 
   /* Array of 5 CPU_stage */
-  CPU_Stage stage[5];
+  CPU_Stage stage[9];
 
   /* Code Memory where instructions are stored */
   APEX_Instruction *code_memory;
@@ -169,5 +172,6 @@ int execute(APEX_CPU *cpu);
 
 int memory2(APEX_CPU *cpu);
 
+void freephyreg(struct prf prf[], int free);
 
 #endif
