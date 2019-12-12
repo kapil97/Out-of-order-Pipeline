@@ -6,11 +6,12 @@ enum
   DRF,
   //QUEUE,
   INT_FU1,
+  INT_FU2,
   EX,
-  NUM_STAGES
+  NUM_STAGES,
 
-  //RETIRE,
-  //NUM_STAGES
+  RETIRE
+
 };
 
 /* Format of an APEX instruction  */
@@ -135,6 +136,7 @@ struct functionalUnits
 
 struct prf{
     int valid;
+    int ready;
     int value;
     int latest;
     int arf_val;
