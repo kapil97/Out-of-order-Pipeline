@@ -148,14 +148,15 @@ struct prf{
     int arf_val;
 }prf[24];
 int pcount;
-struct ROB
-{
-
-  int ROBHeadPointer;
-  int ROBTailPointer;
-
-  struct APEX_Instruction ROBAPEXInstruction;
-} ROB[12];
+//int memcycles;
+//struct ROB
+//{
+//
+//  int ROBHeadPointer;
+//  int ROBTailPointer;
+//
+// struct APEX_Instruction ROBAPEXInstruction;
+//} ROB[12];
 
 APEX_Instruction *create_code_memory(const char *filename, int *size);
 
@@ -164,6 +165,10 @@ APEX_CPU *APEX_cpu_init(const char *filename);
 int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles);
 
 void APEX_cpu_stop(APEX_CPU *cpu);
+
+APEX_Instruction ROB[8];
+
+int RF,RR;
 
 int fetch(APEX_CPU *cpu);
 
