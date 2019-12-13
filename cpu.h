@@ -10,7 +10,7 @@ enum
   MUL_FU1,
   MUL_FU2,
   MUL_FU3,
-  //EX,
+  MEM,
   NUM_STAGES,
 
   RETIRE
@@ -23,7 +23,8 @@ typedef struct APEX_Instruction
   char opcode[128]; // Operation Code
   int rd;           // Destination Register Address
   int rs1;          // Source-1 Register Address
-  int rs2;          // Source-2 Register Address
+  int rs2;
+  int rs3;// Source-2 Register Address
   int imm;          // Literal Value
 } APEX_Instruction;
 
@@ -33,11 +34,13 @@ typedef struct CPU_Stage
   int pc;           // Program Counter
   char opcode[128]; // Operation Code
   int rs1;          // Source-1 Register Address
-  int rs2;          // Source-2 Register Address
+  int rs2;
+  int rs3;// Source-2 Register Address
   int rd;           // Destination Register Address
   int imm;          // Literal Value
   int rs1_value;    // Source-1 Register Value
-  int rs2_value;    // Source-2 Register Value
+  int rs2_value;
+    int rs3_value; // Source-2 Register Value
   int buffer;       // Latch to hold some value
   int mem_address;  // Computed Memory Address
   int busy;         // Flag to indicate, stage is performing some action
@@ -61,7 +64,7 @@ typedef struct APEX_CPU
   int freeRegisterFlag[32];
 
   /* Array of 5 CPU_stage */
-  CPU_Stage stage[9];
+  CPU_Stage stage[10];
 
   /* Code Memory where instructions are stored */
   APEX_Instruction *code_memory;
