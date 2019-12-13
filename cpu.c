@@ -119,6 +119,10 @@ static void print_instruction(CPU_Stage *stage)
   {
     printf("%s,R%d,R%d,#%d ", stage->opcode, stage->rs1, stage->rs2, stage->imm);
   }
+    if (strcmp(stage->opcode, "STR") == 0)
+    {
+        printf("%s,R%d,R%d,R%d ", stage->opcode, stage->rs1, stage->rs2, stage->rs3);
+    }
 
   if (strcmp(stage->opcode, "MOVC") == 0)
   {
@@ -506,7 +510,7 @@ int decode(APEX_CPU *cpu)
 int intfu1(APEX_CPU *cpu)
 {
     CPU_Stage *stage = &cpu->stage[INT_FU1];
-    int frd=0,frs1=0,frs2=0,free=0;
+    int frd=0,frs1=0,frs2=0,free=0,frs3=0;
     if(strcmp(stage->opcode,"MOVC")==0){
 
         for (int i = 0; i <24 ; ++i) {
@@ -623,7 +627,7 @@ int intfu1(APEX_CPU *cpu)
 
         stage->rs1_value=prf[frs1].arf_val;
         stage->rs2_value=prf[frs2].arf_val;
-        stage->buffer=stage->rs1_value+stage->imm;
+        stage->buffer=stage->rs2_value+stage->imm;
     }
     if(strcmp(stage->opcode,"SUBL")==0){
 
@@ -700,10 +704,18 @@ int intfu1(APEX_CPU *cpu)
             else frs2++;
 
         }
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rs3 && prf[i].latest==1){
+                break;
+            }
+            else frs3++;
+
+        }
 
         stage->rs1_value=prf[frs1].arf_val;
         stage->rs2_value=prf[frs2].arf_val;
-        stage->buffer=stage->rs1_value - stage->rs2_value;
+        stage->rs3_value=prf[frs3].arf_val;
+        stage->buffer=stage->rs2_value + stage->rs3_value;
 
     }
     if(strcmp(stage->opcode,"LOAD")==0){
@@ -785,16 +797,28 @@ int intfu1(APEX_CPU *cpu)
 
 int intfu2(APEX_CPU *cpu)
 {
+    int strcounter=0, othercounter=0;
     CPU_Stage *stage = &cpu->stage[INT_FU2];
-
-    //if(!stage->stalled)
-        //cpu->stage[RETIRE] = cpu->stage[EX];
-    cpu->stage[RETIRE]=cpu->stage[INT_FU2];
+        if(strcmp(stage->opcode,"STORE")==0  ||
+           strcmp(stage->opcode,"LOAD") ==0  ||
+           strcmp(stage->opcode,"STR")  ==0  ||
+           strcmp(stage->opcode,"LDR")  ==0
+        ){
+            cpu->stage[MEM]=cpu->stage[INT_FU2];
+            strcounter++;
+        }
+        else {
+            cpu->stage[RETIRE] = cpu->stage[INT_FU2];
+            othercounter++;
+        }
     if (ENABLE_DEBUG_MESSAGES)
     {
         print_stage_content("Integer FU2", stage);
     }
-
+    if(strcounter==0)
+        strcpy(cpu->stage[MEM].opcode,"");
+    if(othercounter==0)
+        strcpy(cpu->stage[RETIRE].opcode,"");
 
     return 0;
 }
@@ -880,6 +904,52 @@ int mulfu3(APEX_CPU *cpu){
 
 }
 
+int mem(APEX_CPU *cpu){
+    CPU_Stage *stage = &cpu->stage[MEM];
+    int frs1=0,frd=0,free=0;
+    if(strcmp(stage->opcode,"STORE")==0 || strcmp(stage->opcode,"STR")) {
+
+        for (int i = 0; i <24 ; ++i) {
+            if (prf[i].value == stage->rs1 && prf[i].latest == 1) {
+                break;
+            } else frs1++;
+        }
+            stage->rs1_value=prf[frs1].arf_val;
+            cpu->regs[stage->buffer]=stage->rs1_value;
+            freephyreg(prf,frs1);
+
+
+    }
+
+    if(strcmp(stage->opcode,"LDR")==0 || strcmp(stage->opcode,"LOAD")==0) {
+
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==0){
+                break;
+            }
+            else frd++;
+        }
+
+        stage->rs1_value=prf[frs1].arf_val;
+        stage->buffer=stage->rs1_value + stage->imm;
+        for (int i = 0; i <24 ; ++i) {
+            if(prf[i].value==stage->rd && prf[i].latest==1){
+                break;
+            }
+            else free++;
+        }
+        freephyreg(prf,free);
+        prf[frd].arf_val=stage->buffer;
+        prf[frd].latest=1;
+    }
+    cpu->stage[RETIRE]=cpu->stage[MEM];
+    if (ENABLE_DEBUG_MESSAGES)
+    {
+        print_stage_content("Memmory", stage);
+    }
+    return 0;
+}
+
 int retire(APEX_CPU *cpu){
     CPU_Stage *stage = &cpu->stage[RETIRE];
     if (ENABLE_DEBUG_MESSAGES)
@@ -907,6 +977,7 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
         printf("--------------------------------\n");
       }
       retire(cpu);
+      mem(cpu);
       mulfu3(cpu);
       mulfu2(cpu);
       mulfu1(cpu);
@@ -924,7 +995,8 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
       CPU_Stage *stage5 = &cpu->stage[MUL_FU1];
       CPU_Stage *stage6 = &cpu->stage[MUL_FU2];
       CPU_Stage *stage7 = &cpu->stage[MUL_FU3];
-      CPU_Stage *stage8 = &cpu->stage[RETIRE];
+      CPU_Stage *stage8 = &cpu->stage[MEM];
+      CPU_Stage *stage9 = &cpu->stage[RETIRE];
 
 
       if (
@@ -935,6 +1007,7 @@ int APEX_cpu_run(APEX_CPU *cpu, const char *function, int cycles)
                   (strcmp(stage6->opcode, "") == 0) &&
                   (strcmp(stage7->opcode, "") == 0) &&
                   (strcmp(stage8->opcode, "") == 0) &&
+                  (strcmp(stage9->opcode, "") == 0) &&
           (strcmp(stage5->opcode, "") == 0)
 
       )
